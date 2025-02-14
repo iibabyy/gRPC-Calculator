@@ -1,7 +1,7 @@
 use std::error::Error;
 
 use proto::{admin_server::{Admin, AdminServer}, calculator_server::{Calculator, CalculatorServer}, CalculationResponse, CounterResponse};
-use tonic::transport::Server;
+use tonic::{metadata::MetadataValue, transport::Server, Request, Status};
 
 
 mod proto {
@@ -89,6 +89,17 @@ impl Admin for AdminService {
     }
 }
 
+fn check_auth(
+    req: Request<()>
+) -> Result<Request<()>, Status> {
+    let token: MetadataValue<_> = "Bearer some-secret-token".parse().unwrap();
+
+    match req.metadata().get("Authorization") {
+        Some(t) if token == t => Ok(req),
+        _ => Err(tonic::Status::unauthenticated("No valid auth token")),
+    }
+}
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
     let addr = "0.0.0.0:8080".parse()?;
@@ -105,7 +116,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     Server::builder()
         .add_service(service)
         .add_service(CalculatorServer::new(calc))
-        .add_service(AdminServer::new(adm))
+        .add_service(AdminServer::with_interceptor(adm, check_auth))
         .serve(addr)
         .await?;
 
